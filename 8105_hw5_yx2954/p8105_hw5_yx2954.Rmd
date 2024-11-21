@@ -1,0 +1,220 @@
+---
+title: "p8105_hw5_yx2954"
+author: "Yiran Xu"
+date: "2024-11-09"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(knitr)
+```
+
+# Problem 1
+
+## Make function
+```{r}
+check_duplicate_birthdays = function(n) {
+  if ((as.integer(n) <= 0) == TRUE) {
+    stop("Argument n should be positive integer")
+  }
+  birthdays = sample(1:365, n, replace = TRUE)
+  return(length(birthdays) != length(unique(birthdays)))
+  }
+```
+
+## Simulation run
+```{r}
+run_times = 10000
+n_range = 2:50
+prob = numeric(length(n_range))
+```
+
+```{r}
+for (n in n_range) {
+  duplicates = sum(replicate(run_times, check_duplicate_birthdays(n)))
+  prob[n - 1] = duplicates / run_times
+}
+```
+
+## Make plot
+```{r}
+results = data.frame(GroupSize = n_range, Probability = prob)
+
+ggplot(results, aes(x = n_range, y = prob)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  labs(title = "Probability of At Least Two People Sharing a Birthday by Group Size",
+       x = "Group Size", y = "Probability of At Least Two Share Birthday") +
+  theme_minimal()
+```
+
+The plot shows that the probability of at lease two people share birthdays increases as group size grows. It reaches 0.5 as group size is 23 and is approaching 1.0 near 50 people. The slope decreases as the group size gets larger, indicating a slower probability increase at higher group sizes.
+
+# Problem 2
+
+## Build function
+```{r}
+simulate_test = function(mu, n = 30, sigma = 5, simulations = 5000, alpha = 0.05) {
+  if (as.integer(mu) != mu) {
+    stop("Argument mu should be integer")
+  }
+  
+  test_output = vector("list", length = simulations)
+  
+  for (i in 1:simulations) {
+    data = rnorm(n, mean = mu, sd = sigma)
+  
+    test_result = t.test(data, mu = 0)
+    
+    test_output[[i]] = broom::tidy(test_result) |>
+      select(estimate, p.value)
+  }
+  
+  output_df = bind_rows(test_output)
+  
+  power = mean(output_df$p.value < alpha)
+  
+  avg_estimate_all = mean(output_df$estimate)
+  
+  avg_estimate_rejected = mean(output_df$estimate[output_df$p.value < alpha], na.rm = TRUE)
+  
+  return(tibble(
+    mu = mu,
+    power = power,
+    avg_estimate_all = avg_estimate_all,
+    avg_estimate_rejected = avg_estimate_rejected
+  ))
+}
+```
+
+## Question 1
+```{r}
+set.seed(123)
+
+mu = 0:6
+test_result = map_dfr(mu, simulate_test)
+
+kable(test_result, caption = "Power Increases With Effect Size", col.names = c("Effect Size", "power", "All Average Estimate", "Rejected Average Estimate"))
+
+ggplot(test_result, aes(x = mu, y = power)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Power of Test vs True Mean (μ)",
+    x = "True Value of μ",
+    y = "Proportion of Null Rejected (Power)"
+  ) +
+  theme_minimal() +
+  ylim(0, 1)
+```
+
+From the figure above, the bigger the effect size, the higher the power.
+
+## Question 2
+```{r}
+ggplot(test_result, aes(x = mu)) +
+  geom_line(aes(y = avg_estimate_all, color = "Average Estimate (All Samples)"), size = 1) +
+  geom_point(aes(y = avg_estimate_all, color = "Average Estimate (All Samples)"), size = 2) +
+  geom_line(aes(y = avg_estimate_rejected, color = "Average Estimate (Rejected Samples)"), size = 1) +
+  geom_point(aes(y = avg_estimate_rejected, color = "Average Estimate (Rejected Samples)"), size = 2, shape = 17) +
+  labs(
+    title = "Average Estimate of µ̂ vs True Value of µ",
+    x = "True Value of µ",
+    y = "Average Estimate of µ̂",
+    color = "Legend"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10)
+  ) +
+  scale_color_manual(values = c("Average Estimate (All Samples)" = "blue", 
+                                "Average Estimate (Rejected Samples)" = "red"))
+
+```
+
+The average estimate of mu only in samples for which the null was rejected is not equal to the true mu when the true mu is 1, and gradually approches to the true mean when the true mean increases. This is because the average estimate of mu only in samples for which the null was rejected is biased, but as the effect size increase, the majority of samples are rejected, reducing the selection bias.
+
+When mu = 0, the average estimate of mu only in samples for which the null was rejected is almost equal to the true mu, as the sampling distribution is the same to the true distribution.
+
+# Problem 3
+
+```{r}
+homicide_df = read_csv("data/homicide-data.csv") |>
+  arrange(reported_date) 
+
+head(homicide_df)
+```
+
+## Describe the raw data
+
+The raw data describe the basic information of homicides in 50 large U.S. cities from 2007-01-01 to 2017-12-31, including the date, victim name, race, age, sex, location and case status.
+
+## Summarize within cities 
+
+Data from Tulsa, AL is excluded, as no city named Tulsa is found in AL state.
+```{r}
+homicide_summary = homicide_df |>
+  mutate(city_state = paste(city, state, sep = ", ")) |>
+  filter(city_state != "Tulsa, AL") |>
+  select(-city, -state) |>
+  group_by(city_state) |>
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  )
+
+kable(homicide_summary, caption = "Summary of Homicides by City and State", col.names = c("City", "Total", "Unsolved"))
+```
+## Prop test in Baltimore
+```{r}
+baltimore_test =
+  homicide_summary |>
+  filter(city_state == "Baltimore, MD") |>
+  with(prop.test(unsolved_homicides, total_homicides)) |>
+  broom::tidy() |>
+  select(estimate, p.value)
+
+head(baltimore_test)
+```
+The estimate proportion is `r baltimore_test$estimate` with a p_value = `r baltimore_test$p.value`
+
+## Prop test in other cities
+```{r}
+unsolved_prop_test = homicide_summary |>
+  mutate(
+    test_results = map2(unsolved_homicides, total_homicides, ~ prop.test(.x, .y)),
+    tidy_results = map(test_results, broom::tidy)
+  ) |>
+  unnest(tidy_results) |>
+  select(city_state, estimate, conf.low, conf.high)
+
+kable(unsolved_prop_test, caption = "Summary of estimated unsolved proportion by City", col.names = c("City", "Estimated proportion", "CI_lower", "CI_upper"))
+```
+
+## Make plot
+```{r  fig.height=10, fig.width=8}
+unsolved_prop_test |>
+  arrange(desc(estimate)) |>
+  mutate(city_state = factor(city_state, levels = city_state)) |>
+  ggplot(aes(x = estimate, y = city_state)) +
+  geom_point(size = 1) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0.2) +
+  labs(
+    title = "Proportion of Unsolved Homicides by City",
+    x = "Proportion of Unsolved Homicides",
+    y = "City"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 9))
+
+```
+
+Chicago has the highest estimated unsolved homicides rate, while Tulsa has the lowest, but very low confidence, as the sample size is way too small for a precise estimation.
