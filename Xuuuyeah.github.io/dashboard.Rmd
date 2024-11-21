@@ -1,0 +1,86 @@
+---
+title: "Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    source: embed
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(readr)
+library(plotly)
+library(p8105.datasets)
+```
+
+```{r}
+data("ny_noaa")
+
+set.seed(123)
+nynoaadat_2010 = ny_noaa |>
+  mutate(tmax = as.numeric(tmax) / 10, 
+         tmin = as.numeric(tmin) / 10,
+         prcp = prcp / 10,
+         year = year(date),
+         month = month(date),
+         day = day(date)) |> 
+  select(year, month, day, everything(), -date, -snwd) |>
+  filter(tmax > tmin | is.na(tmax) | is.na(tmin)) |>
+  filter(snow >= 0 | is.na(snow)) |>
+  filter(year == "2010") |>
+  drop_na(prcp, snow, tmax, tmin) |>
+  sample_n(1000)
+```
+
+```{r}
+monthly_prcp = nynoaadat_2010 |>
+  group_by(month) |>
+  summarise(daily_prcp = mean(prcp))  |>
+  mutate(avg_monthly_prcp = 30 * daily_prcp)
+```
+
+Column {data-width=600}
+-----------------------------------------------------------------------
+
+### Chart A: Tmax vs tmin
+
+```{r}
+nynoaadat_2010 |>
+  mutate(text_label = str_c("Precipitation:", prcp, "\nSnow:", snow)) |>
+  plot_ly(
+    y = ~tmax, x = ~tmin, text = ~text_label,
+    type = "scatter", mode = "markers",
+    color = ~as.factor(month), colors = "inferno"
+  )
+```
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+
+### Chart B: Tmax vs month
+
+```{r}
+nynoaadat_2010 |>
+  mutate(
+    month = factor(month, levels = 1:12, labels = month.name)) |>
+  plot_ly(
+    y = ~tmax, x = ~month, color = ~month,
+    type = "box", colors = "viridis"
+  )
+```
+
+### Chart C: Prcp vs month
+
+```{r}
+monthly_prcp |>
+  mutate(
+    month = factor(month, levels = 1:12, labels = month.name)
+  ) |>
+  plot_ly(
+    x = ~month, y = ~avg_monthly_prcp, color = ~month,
+    type = "bar", colors = "magma"
+  )
+```
+
